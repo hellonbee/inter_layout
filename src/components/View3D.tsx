@@ -115,18 +115,26 @@ function Scene() {
         const f = furniture.find((f) => f.id === item.furnitureId)
         if (!f) return null
         const selected = item.id === selectedId
+        const isWall = f.kind === 'wall'
+        const h = isWall ? room.height : f.height
         return (
           <mesh
             key={item.id}
-            position={[item.x - W / 2, f.height / 2, item.y - D / 2]}
+            position={[item.x - W / 2, h / 2, item.y - D / 2]}
             rotation={[0, (-item.rotation * Math.PI) / 180, 0]}
             onClick={(e) => {
               e.stopPropagation()
               select(item.id)
             }}
           >
-            <boxGeometry args={[f.width, f.height, f.depth]} />
-            <meshStandardMaterial color={f.color} emissive={selected ? '#2563eb' : '#000000'} emissiveIntensity={selected ? 0.35 : 0} />
+            <boxGeometry args={[f.width, h, f.depth]} />
+            <meshStandardMaterial
+              color={f.color}
+              transparent={isWall}
+              opacity={isWall ? 0.75 : 1}
+              emissive={selected ? '#2563eb' : '#000000'}
+              emissiveIntensity={selected ? 0.35 : 0}
+            />
             <Edges color="rgba(0,0,0,0.4)" />
           </mesh>
         )

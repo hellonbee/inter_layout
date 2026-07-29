@@ -25,7 +25,10 @@ export function FurnitureItem({ item, furniture: f, room, selected }: Props) {
     }
   }, [selected])
 
-  const fontSize = Math.max(10, Math.min(16, Math.min(f.width, f.depth) / 4))
+  const isWall = f.kind === 'wall'
+  const fontSize = isWall
+    ? Math.max(9, Math.min(13, f.width / 8))
+    : Math.max(10, Math.min(16, Math.min(f.width, f.depth) / 4))
 
   return (
     <>
@@ -51,8 +54,8 @@ export function FurnitureItem({ item, furniture: f, room, selected }: Props) {
           width={f.width}
           height={f.depth}
           fill={f.color}
-          opacity={0.9}
-          cornerRadius={Math.min(6, f.width / 8, f.depth / 8)}
+          opacity={isWall ? 1 : 0.9}
+          cornerRadius={isWall ? 0 : Math.min(6, f.width / 8, f.depth / 8)}
           stroke={selected ? '#2563eb' : 'rgba(0,0,0,0.35)'}
           strokeWidth={selected ? 3 : 1}
           shadowColor="black"
@@ -60,13 +63,13 @@ export function FurnitureItem({ item, furniture: f, room, selected }: Props) {
           shadowOpacity={0.2}
         />
         <Text
-          text={`${f.name}\n${f.width}×${f.depth}`}
+          text={isWall ? `${f.width}` : `${f.name}\n${f.width}×${f.depth}`}
           width={f.width}
           height={f.depth}
           align="center"
           verticalAlign="middle"
           fontSize={fontSize}
-          fill="#1e293b"
+          fill={isWall ? '#ffffff' : '#1e293b'}
           listening={false}
         />
       </Group>

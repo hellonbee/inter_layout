@@ -389,6 +389,37 @@ body {
   padding: 18px 0;
 }
 
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 6px 0 8px;
+}
+
+.section-title:not(:first-child) {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 2px solid var(--border);
+}
+
+.drag-place {
+  touch-action: none;
+  user-select: none;
+}
+
+.drag-ghost {
+  position: fixed;
+  transform: translate(-50%, -120%);
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 50;
+}
+
 .inline-num {
   width: 56px;
   border: 1px solid var(--border);

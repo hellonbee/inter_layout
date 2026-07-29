@@ -23,6 +23,7 @@ export interface Furniture {
   depth: number
   height: number
   color: string
+  kind?: 'item' | 'wall' // wall: 내벽(칸막이) — 3D에서 방 높이로 렌더
 }
 
 export interface PlacedItem {

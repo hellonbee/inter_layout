@@ -7,7 +7,7 @@ type Tab = 'room' | 'door' | 'furniture'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'room', label: '도면' },
-  { key: 'door', label: '문' },
+  { key: 'door', label: '벽·문' },
   { key: 'furniture', label: '가구' },
 ]
 

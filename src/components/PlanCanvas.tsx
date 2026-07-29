@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import Konva from 'konva'
 import { Layer, Stage } from 'react-konva'
 import { useStore } from '../store'
+import { stageRegistry } from '../stageRegistry'
+import { DoorItem } from './DoorItem'
 import { FurnitureItem } from './FurnitureItem'
 import { RoomShape } from './RoomShape'
 import { SelectionToolbar } from './SelectionToolbar'
@@ -16,7 +18,7 @@ const MARGIN = 50 // px, 방 주위 여백 (치수 라벨 공간 포함)
 
 export function PlanCanvas() {
   const containerRef = useRef<HTMLDivElement>(null)
-  const stageRef = useRef<Konva.Stage>(null)
+  const stageRef = useRef<Konva.Stage | null>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 })
 
@@ -124,8 +126,12 @@ export function PlanCanvas() {
 
   return (
     <div className="plan-canvas" ref={containerRef}>
+      {size.w > 0 && size.h > 0 && (
       <Stage
-        ref={stageRef}
+        ref={(node) => {
+          stageRef.current = node
+          stageRegistry.current = node
+        }}
         width={size.w}
         height={size.h}
         scaleX={view.scale}
@@ -147,7 +153,10 @@ export function PlanCanvas() {
         }}
       >
         <Layer>
-          <RoomShape room={room} doors={doors} />
+          <RoomShape room={room} />
+          {doors.map((d) => (
+            <DoorItem key={d.id} door={d} room={room} />
+          ))}
           {placed.map((item) => {
             const f = furniture.find((f) => f.id === item.furnitureId)
             if (!f) return null
@@ -163,6 +172,7 @@ export function PlanCanvas() {
           })}
         </Layer>
       </Stage>
+      )}
       <SelectionToolbar />
       <button className="fit-btn" onClick={fitView} title="화면에 맞춤">
         ⤢
