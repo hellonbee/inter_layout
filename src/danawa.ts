@@ -9,7 +9,9 @@ export interface DanawaResult {
   raw: string // 원본 치수 문자열 (예: 1600x800x720mm)
 }
 
-const DIM_RE = /(\d{2,4})\s*[xX×]\s*(\d{2,4})\s*[xX×]\s*(\d{2,4})(?:\s*~\s*\d{2,4})?\s*mm/
+// mm(정수) 또는 cm(소수점 허용) 단위의 가로x세로x높이 표기
+const DIM_RE =
+  /(\d{1,4}(?:\.\d+)?)\s*[xX×]\s*(\d{1,4}(?:\.\d+)?)\s*[xX×]\s*(\d{1,4}(?:\.\d+)?)(?:\s*~\s*[\d.]+)?\s*(mm|cm)/
 
 // 스펙/UI 라인으로 판단해 상품명 후보에서 제외하는 패턴
 const NOT_NAME_RE =
@@ -54,13 +56,11 @@ export async function searchDanawa(query: string, signal?: AbortSignal): Promise
     const key = `${name}|${m[0]}`
     if (seen.has(key)) continue
     seen.add(key)
-    results.push({
-      name,
-      width: Math.max(1, Math.round(Number(m[1]) / 10)),
-      depth: Math.max(1, Math.round(Number(m[2]) / 10)),
-      height: Math.max(1, Math.round(Number(m[3]) / 10)),
-      raw: m[0].replace(/\s+/g, ''),
-    })
+    const toCm = (v: string) => Math.max(1, Math.round(m[4] === 'mm' ? Number(v) / 10 : Number(v)))
+    const [width, depth, height] = [toCm(m[1]), toCm(m[2]), toCm(m[3])]
+    // 가구로 보기 어려운 초소형 치수는 제외
+    if (Math.max(width, depth, height) < 15) continue
+    results.push({ name, width, depth, height, raw: m[0].replace(/\s+/g, '') })
   }
   return results
 }
