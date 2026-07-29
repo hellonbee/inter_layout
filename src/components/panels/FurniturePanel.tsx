@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { searchDanawa, type DanawaResult } from '../../danawa'
 import { clientToWorld } from '../../stageRegistry'
 import { useStore } from '../../store'
 import { NumField } from './NumField'
@@ -7,10 +8,14 @@ const PALETTE = ['#c8916b', '#7d9c86', '#8b9dc3', '#d4a5a5', '#b8a978', '#9b8bb4
 
 interface DragState {
   fid: string
+  label: string
   startX: number
   startY: number
-  moved: boolean
+  active: boolean
+  timer: number | null
 }
+
+const preventTouch = (e: TouchEvent) => e.preventDefault()
 
 export function FurniturePanel() {
   const furniture = useStore((s) => s.furniture)
@@ -28,64 +33,162 @@ export function FurniturePanel() {
   const [ghost, setGhost] = useState<{ x: number; y: number; label: string } | null>(null)
   const dragRef = useRef<DragState | null>(null)
 
+  // 다나와 검색 상태
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [searchResults, setSearchResults] = useState<DanawaResult[] | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => () => abortRef.current?.abort(), [])
+
   const items = furniture.filter((f) => f.kind !== 'wall')
 
   const add = () => {
     const n = name.trim() || `가구 ${items.length + 1}`
     addFurniture({ name: n, width, depth, height, color })
     setName('')
+    setSearchResults(null)
     setColor(PALETTE[(items.length + 1) % PALETTE.length])
   }
 
   const countOf = (fid: string) => placed.filter((p) => p.furnitureId === fid).length
 
-  // "배치" 버튼: 탭 = 중앙에 배치, 도면 위로 드래그 = 놓은 위치에 배치
-  const onDragStart = (e: React.PointerEvent, fid: string) => {
-    e.preventDefault()
+  const runSearch = async () => {
+    const q = name.trim()
+    if (!q) {
+      setSearchError('검색할 가구 이름을 먼저 입력하세요.')
+      return
+    }
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setSearching(true)
+    setSearchError('')
+    setSearchResults(null)
+    try {
+      const results = await searchDanawa(q, ctrl.signal)
+      if (results.length === 0) setSearchError('크기 정보가 있는 상품을 찾지 못했습니다.')
+      else setSearchResults(results)
+    } catch (e) {
+      if (!ctrl.signal.aborted) setSearchError(e instanceof Error ? e.message : '검색 중 오류가 발생했습니다.')
+    } finally {
+      if (abortRef.current === ctrl) setSearching(false)
+    }
+  }
+
+  const applyResult = (r: DanawaResult) => {
+    setName(r.name)
+    setWidth(r.width)
+    setDepth(r.depth)
+    setHeight(r.height)
+    setSearchResults(null)
+  }
+
+  // ── 가구 셀 드래그: 데스크톱은 즉시, 모바일은 길게 눌러 시작 (짧게 스와이프하면 목록 스크롤) ──
+  const cleanupDrag = () => {
+    const d = dragRef.current
+    if (d?.timer) window.clearTimeout(d.timer)
+    document.removeEventListener('touchmove', preventTouch)
+    dragRef.current = null
+    setGhost(null)
+  }
+
+  const activateDrag = (x: number, y: number) => {
+    const d = dragRef.current
+    if (!d || d.active) return
+    d.active = true
+    document.addEventListener('touchmove', preventTouch, { passive: false })
+    try {
+      navigator.vibrate?.(20)
+    } catch {
+      /* 미지원 무시 */
+    }
+    setGhost({ x, y, label: d.label })
+  }
+
+  const onCellPointerDown = (e: React.PointerEvent, fid: string, label: string) => {
+    if ((e.target as HTMLElement).closest('button, input')) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
     try {
       ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     } catch {
-      // 포인터 캡처 실패해도 드래그/탭 동작은 계속
+      /* 합성 이벤트 등 캡처 실패해도 계속 */
     }
-    dragRef.current = { fid, startX: e.clientX, startY: e.clientY, moved: false }
+    const timer =
+      e.pointerType === 'mouse'
+        ? null
+        : window.setTimeout(() => activateDrag(e.clientX, e.clientY), 280)
+    dragRef.current = { fid, label, startX: e.clientX, startY: e.clientY, active: false, timer }
   }
 
-  const onDragMove = (e: React.PointerEvent, label: string) => {
+  const onCellPointerMove = (e: React.PointerEvent) => {
     const d = dragRef.current
     if (!d) return
-    if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 8) return
-    d.moved = true
-    setGhost({ x: e.clientX, y: e.clientY, label })
-  }
-
-  const onDragEnd = (e: React.PointerEvent) => {
-    const d = dragRef.current
-    dragRef.current = null
-    setGhost(null)
-    if (!d) return
-    if (!d.moved) {
-      placeFurniture(d.fid) // 탭: 도면 중앙에 배치
+    if (d.active) {
+      setGhost({ x: e.clientX, y: e.clientY, label: d.label })
       return
     }
-    const world = clientToWorld(e.clientX, e.clientY)
-    if (world) placeFurnitureAt(d.fid, world.x, world.y)
+    const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY)
+    if (e.pointerType === 'mouse') {
+      if (dist > 6) activateDrag(e.clientX, e.clientY)
+    } else if (dist > 12) {
+      cleanupDrag() // 움직임이 먼저 시작됐으면 스크롤 제스처로 판단
+    }
+  }
+
+  const onCellPointerUp = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    const wasActive = d?.active
+    const fid = d?.fid
+    cleanupDrag()
+    if (wasActive && fid) {
+      const world = clientToWorld(e.clientX, e.clientY)
+      if (world) placeFurnitureAt(fid, world.x, world.y)
+    }
   }
 
   return (
     <div className="panel-body">
       <p className="hint">
-        가구를 등록한 뒤 <b>“배치” 버튼을 눌러 도면 위로 끌어다 놓으면</b> 그 자리에 놓입니다. 짧게 누르면 도면
-        중앙에 배치됩니다.
+        가구 이름을 입력하고 <b>다나와 검색</b>을 누르면 실제 상품 크기를 자동으로 채울 수 있습니다. 등록된 가구는{' '}
+        <b>목록에서 도면 위로 끌어다 놓으면</b> 그 자리에 배치됩니다. (모바일: 길게 눌러 드래그)
       </p>
       <label className="field">
         <span>이름</span>
-        <input
-          type="text"
-          placeholder="예: 진열대"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <div className="name-row">
+          <input
+            type="text"
+            placeholder="예: 시디즈 T50 의자"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') runSearch()
+            }}
+          />
+          <button className="btn search-btn" onClick={runSearch} disabled={searching}>
+            {searching ? '검색 중…' : '다나와 검색'}
+          </button>
+        </div>
       </label>
+      {searching && <p className="hint searching">다나와에서 검색 중입니다… (최대 30초 걸릴 수 있어요)</p>}
+      {searchError && <p className="hint error">{searchError}</p>}
+      {searchResults && (
+        <ul className="search-results">
+          {searchResults.map((r, i) => (
+            <li key={i}>
+              <button onClick={() => applyResult(r)}>
+                <span className="result-name">{r.name}</span>
+                <span className="result-dims">
+                  {r.width}×{r.depth}×{r.height} cm
+                </span>
+              </button>
+            </li>
+          ))}
+          <li className="close-row">
+            <button onClick={() => setSearchResults(null)}>닫기 ✕</button>
+          </li>
+        </ul>
+      )}
       <div className="field-grid three">
         <NumField label="가로" value={width} min={5} max={2000} onCommit={setWidth} />
         <NumField label="세로" value={depth} min={5} max={2000} onCommit={setDepth} />
@@ -108,23 +211,22 @@ export function FurniturePanel() {
 
       <ul className="item-list">
         {items.map((f) => (
-          <li key={f.id}>
+          <li
+            key={f.id}
+            className="drag-cell"
+            onPointerDown={(e) => onCellPointerDown(e, f.id, f.name)}
+            onPointerMove={onCellPointerMove}
+            onPointerUp={onCellPointerUp}
+            onPointerCancel={cleanupDrag}
+            onContextMenu={(e) => e.preventDefault()}
+          >
             <span className="dot" style={{ background: f.color }} />
             <span className="item-name">{f.name}</span>
             <span className="item-dims">
               {f.width}×{f.depth}×{f.height}
               {countOf(f.id) > 0 && <em> · {countOf(f.id)}개 배치됨</em>}
             </span>
-            <button
-              className="btn small drag-place"
-              onPointerDown={(e) => onDragStart(e, f.id)}
-              onPointerMove={(e) => onDragMove(e, f.name)}
-              onPointerUp={onDragEnd}
-              onPointerCancel={() => {
-                dragRef.current = null
-                setGhost(null)
-              }}
-            >
+            <button className="btn small" onClick={() => placeFurniture(f.id)}>
               배치
             </button>
             <button

@@ -40,6 +40,7 @@ interface StoreState extends Plan {
   updateDoor: (id: string, patch: Partial<Omit<Door, 'id'>>) => void
   removeDoor: (id: string) => void
   addFurniture: (f: Omit<Furniture, 'id'>) => void
+  updateFurniture: (id: string, patch: Partial<Omit<Furniture, 'id' | 'kind'>>) => void
   removeFurniture: (id: string) => void
   placeFurniture: (furnitureId: string) => void
   placeFurnitureAt: (furnitureId: string, x: number, y: number) => void
@@ -79,6 +80,16 @@ export const useStore = create<StoreState>()(
       removeDoor: (id) => set((s) => ({ doors: s.doors.filter((d) => d.id !== id) })),
 
       addFurniture: (f) => set((s) => ({ furniture: [...s.furniture, { ...f, id: uid() }] })),
+
+      updateFurniture: (id, patch) =>
+        set((s) => {
+          const furniture = s.furniture.map((f) => (f.id === id ? { ...f, ...patch } : f))
+          const def = furniture.find((f) => f.id === id)
+          if (!def) return { furniture }
+          // 크기가 바뀌면 배치된 모든 인스턴스를 방 경계 안으로 재조정
+          const placed = s.placed.map((p) => (p.furnitureId === id ? { ...p, ...clampToRoom(s.room, def, p) } : p))
+          return { furniture, placed }
+        }),
       removeFurniture: (id) =>
         set((s) => ({
           furniture: s.furniture.filter((f) => f.id !== id),
@@ -193,6 +204,11 @@ export const useStore = create<StoreState>()(
     },
   ),
 )
+
+// 개발 모드에서 콘솔/테스트용 접근 (프로덕션 번들에서는 제거됨)
+if (import.meta.env.DEV) {
+  ;(window as unknown as Record<string, unknown>).__store = useStore
+}
 
 export const selectPlan = (s: Plan): Plan => ({
   room: s.room,
